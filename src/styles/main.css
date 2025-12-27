@@ -80,6 +80,37 @@ a:hover {
     padding: var(--space-4);
 }
 
+/* Accessibility Bar */
+.a11y-bar {
+    background: var(--bg-primary);
+    padding: var(--space-2) var(--space-6);
+    border-bottom: 1px solid var(--gray-200);
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* Skip Link */
+.skip-link {
+    position: absolute;
+    top: -50px;
+    left: var(--space-4);
+    background: var(--primary-blue);
+    color: white;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    font-weight: var(--font-medium);
+    z-index: 10000;
+    transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+    top: var(--space-2);
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
 /* Header */
 .dashboard-header {
     background: var(--bg-primary);

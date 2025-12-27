@@ -1,6 +1,7 @@
 // Graph Assistant Component - Visualization Selector with filtered data
 import { Chart } from 'chart.js/auto';
 import { getFilteredData, subscribeToFilters } from '../data/investigationData.js';
+import { accessibilityReader } from '../accessibility/AccessibilityToggle.js';
 
 export class GraphAssistant {
     constructor(containerId) {
@@ -18,12 +19,15 @@ export class GraphAssistant {
 
         container.innerHTML = `
       <div class="graph-assistant">
-        <div class="visualization-selector">
-          <label class="visualization-selector__label">Select Visualization:</label>
-          <div class="visualization-selector__buttons">
+        <div class="visualization-selector" role="group" aria-label="Chart type selection">
+          <label class="visualization-selector__label" id="viz-selector-label">Select Visualization:</label>
+          <div class="visualization-selector__buttons" role="radiogroup" aria-labelledby="viz-selector-label">
             ${chartTypes.map(type => `
               <button class="viz-btn ${type.id === this.currentChartType ? 'viz-btn--active' : ''}" 
                       data-type="${type.id}"
+                      role="radio"
+                      aria-checked="${type.id === this.currentChartType}"
+                      aria-label="${type.label}: ${type.description}"
                       title="${type.description}">
                 ${type.label}
               </button>
@@ -31,8 +35,9 @@ export class GraphAssistant {
           </div>
         </div>
         
-        <div class="chart-container chart-container--dynamic" id="graphAssistantChart">
-          <canvas id="dynamicChartCanvas"></canvas>
+        <div class="chart-container chart-container--dynamic" id="graphAssistantChart" 
+             role="img" aria-label="Interactive visualization chart" tabindex="0">
+          <canvas id="dynamicChartCanvas" aria-hidden="true"></canvas>
         </div>
       </div>
     `;
@@ -45,6 +50,23 @@ export class GraphAssistant {
         this.unsubscribe = subscribeToFilters(() => {
             this.createChart();
         });
+
+        // Add keyboard listener for chart focus
+        const chartContainer = document.getElementById('graphAssistantChart');
+        if (chartContainer) {
+            chartContainer.addEventListener('focus', () => this.announceChart());
+            chartContainer.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    this.announceChart();
+                }
+            });
+        }
+    }
+
+    announceChart() {
+        const data = getFilteredData();
+        const chartType = this.getChartTypes().find(t => t.id === this.currentChartType);
+        accessibilityReader.describeChart(this.currentChartType, data, chartType?.label || 'Chart');
     }
 
     addStyles() {

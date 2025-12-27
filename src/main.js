@@ -10,6 +10,9 @@ import { InsightsPanel } from './components/InsightsPanel.js';
 import { Filters } from './components/Filters.js';
 import { ExportTools } from './components/ExportTools.js';
 
+// Accessibility
+import { AccessibilityToggle, accessibilityReader } from './accessibility/AccessibilityToggle.js';
+
 // Data - centralized filter state
 import { getFilteredData, subscribeToFilters, investigationData } from './data/investigationData.js';
 
@@ -22,6 +25,7 @@ class AnalyticsDashboard {
     this.insightsPanel = null;
     this.filters = null;
     this.exportTools = null;
+    this.accessibilityToggle = null;
   }
 
   init() {
@@ -34,11 +38,14 @@ class AnalyticsDashboard {
     const app = document.getElementById('app');
 
     app.innerHTML = `
-      <div class="app-container">
+      <!-- Skip Link for Keyboard Users -->
+      <a href="#main-content" class="skip-link">Skip to main content</a>
+      
+      <div class="app-container" role="application" aria-label="Investigation Analytics Dashboard">
         <!-- Header -->
-        <header class="dashboard-header">
+        <header class="dashboard-header" role="banner">
           <div class="dashboard-header__title">
-            <svg class="dashboard-header__logo" viewBox="0 0 32 32" fill="none">
+            <svg class="dashboard-header__logo" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <rect width="32" height="32" rx="6" fill="#3366cc"/>
               <path d="M8 22V14h4v8H8zM14 22V10h4v12h-4zM20 22V6h4v16h-4z" fill="white"/>
             </svg>
@@ -49,61 +56,62 @@ class AnalyticsDashboard {
           </div>
           
           <div class="dashboard-header__actions">
-            <span class="timeframe-badge" id="timeframeBadge">
+            <div id="accessibilityToggleContainer"></div>
+            <span class="timeframe-badge" id="timeframeBadge" role="status" aria-live="polite">
               Timeframe: Full Dataset
             </span>
-            <button class="btn btn--secondary" id="generateSummaryBtn">
+            <button class="btn btn--secondary" id="generateSummaryBtn" aria-label="Generate Executive Summary">
               Generate Executive Summary
             </button>
           </div>
         </header>
         
         <!-- Info Banner -->
-        <div class="info-banner" id="infoBanner">
-          <span class="info-banner__icon">[i]</span>
+        <div class="info-banner" id="infoBanner" role="status" aria-live="polite">
+          <span class="info-banner__icon" aria-hidden="true">[i]</span>
           <span id="infoBannerText">Select a date range to filter the data</span>
         </div>
         
         <!-- Main Content -->
-        <main class="dashboard-main">
+        <main class="dashboard-main" id="main-content" role="main">
           <!-- Filters -->
-          <div id="filtersContainer"></div>
+          <div id="filtersContainer" role="region" aria-label="Data Filters"></div>
           
           <!-- Time Series Chart -->
-          <section class="card">
+          <section class="card" role="region" aria-label="Investigation Trends Chart">
             <div class="card__header">
-              <h2 class="card__title">Investigation Trends Over Time</h2>
+              <h2 class="card__title" id="timeseries-title">Investigation Trends Over Time</h2>
             </div>
-            <div class="card__body" id="timeSeriesContainer"></div>
+            <div class="card__body" id="timeSeriesContainer" aria-labelledby="timeseries-title" tabindex="0"></div>
           </section>
           
           <!-- Summary Grid -->
-          <div class="summary-grid">
+          <div class="summary-grid" role="group" aria-label="Summary Charts">
             <!-- Bar Summary -->
-            <section class="card">
+            <section class="card" role="region" aria-label="Investigation Summary Statistics">
               <div class="card__header">
-                <h3 class="card__title">Time to Investigation Summary</h3>
+                <h3 class="card__title" id="summary-title">Time to Investigation Summary</h3>
               </div>
-              <div class="card__body" id="barSummaryContainer"></div>
+              <div class="card__body" id="barSummaryContainer" aria-labelledby="summary-title" tabindex="0"></div>
             </section>
             
             <!-- Dynamic Chart / Graph Assistant -->
-            <section class="card">
+            <section class="card" role="region" aria-label="Interactive Visualization">
               <div class="card__header">
-                <h3 class="card__title">AI Visualization Assistant</h3>
+                <h3 class="card__title" id="viz-title">Visualization Selector</h3>
               </div>
-              <div class="card__body" id="graphAssistantContainer"></div>
+              <div class="card__body" id="graphAssistantContainer" aria-labelledby="viz-title"></div>
             </section>
           </div>
           
           <!-- Export Tools -->
-          <div id="exportToolsContainer"></div>
+          <div id="exportToolsContainer" role="region" aria-label="Export Options"></div>
           
           <!-- AI Chatbot -->
-          <div id="chatPanelContainer"></div>
+          <div id="chatPanelContainer" role="region" aria-label="AI Analytics Chatbot"></div>
           
           <!-- AI Insights Panel (Bottom) -->
-          <div id="insightsPanelContainer"></div>
+          <div id="insightsPanelContainer" role="region" aria-label="AI Generated Insights"></div>
         </main>
         
         <!-- Footer -->
@@ -237,7 +245,11 @@ class AnalyticsDashboard {
   }
 
   initializeComponents() {
-    // Initialize Filters FIRST - it sets up the filter state
+    // Initialize Accessibility Toggle FIRST
+    this.accessibilityToggle = new AccessibilityToggle('accessibilityToggleContainer');
+    this.accessibilityToggle.render();
+
+    // Initialize Filters
     this.filters = new Filters('filtersContainer');
     this.filters.render();
 
@@ -265,8 +277,15 @@ class AnalyticsDashboard {
     this.chatPanel = new ChatPanel('chatPanelContainer');
     this.chatPanel.render();
 
-    // Subscribe to filter changes to update header
-    subscribeToFilters((data) => this.updateHeader(data));
+    // Subscribe to filter changes to update header and announce
+    subscribeToFilters((data) => {
+      this.updateHeader(data);
+      // Announce filter changes if screen reader is enabled
+      if (accessibilityReader.isEnabled) {
+        accessibilityReader.describeFilterChange('Date range',
+          `${data.dateRange.startMonth} to ${data.dateRange.endMonth}`, data);
+      }
+    });
 
     // Initial header update
     this.updateHeader(getFilteredData());
