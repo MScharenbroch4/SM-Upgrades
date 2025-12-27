@@ -10,9 +10,8 @@ import { InsightsPanel } from './components/InsightsPanel.js';
 import { Filters } from './components/Filters.js';
 import { ExportTools } from './components/ExportTools.js';
 
-// Data
-import { investigationData } from './data/investigationData.js';
-import { dataAnalyzer } from './ai/DataAnalyzer.js';
+// Data - centralized filter state
+import { getFilteredData, subscribeToFilters, investigationData } from './data/investigationData.js';
 
 class AnalyticsDashboard {
   constructor() {
@@ -45,13 +44,13 @@ class AnalyticsDashboard {
             </svg>
             <div>
               <h1 style="margin:0; font-size: 1.25rem;">Investigation Analytics</h1>
-              <span class="dashboard-header__subtitle">Powered by SafeMeasures®</span>
+              <span class="dashboard-header__subtitle">Powered by MS Analytics</span>
             </div>
           </div>
           
           <div class="dashboard-header__actions">
-            <span class="timeframe-badge">
-              Timeframe: ${investigationData.summary.timeframe}
+            <span class="timeframe-badge" id="timeframeBadge">
+              Timeframe: Full Dataset
             </span>
             <button class="btn btn--secondary" id="generateSummaryBtn">
               Generate Executive Summary
@@ -60,9 +59,9 @@ class AnalyticsDashboard {
         </header>
         
         <!-- Info Banner -->
-        <div class="info-banner">
+        <div class="info-banner" id="infoBanner">
           <span class="info-banner__icon">[i]</span>
-          Includes: ${investigationData.summary.description}
+          <span id="infoBannerText">Select a date range to filter the data</span>
         </div>
         
         <!-- Main Content -->
@@ -97,21 +96,21 @@ class AnalyticsDashboard {
             </section>
           </div>
           
-          <!-- AI Insights Panel -->
-          <div id="insightsPanelContainer"></div>
-          
           <!-- Export Tools -->
           <div id="exportToolsContainer"></div>
           
           <!-- AI Chatbot -->
           <div id="chatPanelContainer"></div>
+          
+          <!-- AI Insights Panel (Bottom) -->
+          <div id="insightsPanelContainer"></div>
         </main>
         
         <!-- Footer -->
         <footer class="dashboard-footer">
           <div class="dashboard-footer__logo">
             <span></span>
-            <span>Powered by SafeMeasures®</span>
+            <span>Powered by MS Analytics</span>
           </div>
           <span>© ${new Date().getFullYear()} Enterprise Analytics Dashboard with AI</span>
         </footer>
@@ -238,6 +237,10 @@ class AnalyticsDashboard {
   }
 
   initializeComponents() {
+    // Initialize Filters FIRST - it sets up the filter state
+    this.filters = new Filters('filtersContainer');
+    this.filters.render();
+
     // Initialize Time Series Chart
     this.timeSeriesChart = new TimeSeriesChart('timeSeriesContainer');
     this.timeSeriesChart.render();
@@ -254,10 +257,6 @@ class AnalyticsDashboard {
     this.insightsPanel = new InsightsPanel('insightsPanelContainer');
     this.insightsPanel.render();
 
-    // Initialize Filters
-    this.filters = new Filters('filtersContainer', (state) => this.handleFilterChange(state));
-    this.filters.render();
-
     // Initialize Export Tools
     this.exportTools = new ExportTools('exportToolsContainer');
     this.exportTools.render();
@@ -265,6 +264,12 @@ class AnalyticsDashboard {
     // Initialize Chat Panel (last to ensure it's at the bottom)
     this.chatPanel = new ChatPanel('chatPanelContainer');
     this.chatPanel.render();
+
+    // Subscribe to filter changes to update header
+    subscribeToFilters((data) => this.updateHeader(data));
+
+    // Initial header update
+    this.updateHeader(getFilteredData());
   }
 
   setupEventListeners() {
@@ -313,30 +318,49 @@ class AnalyticsDashboard {
     });
   }
 
-  handleFilterChange(state) {
-    // Update time series chart based on filter state
-    if (this.timeSeriesChart) {
-      this.timeSeriesChart.togglePercentages(state.displayMode === 'percentages');
+  updateHeader(data) {
+    const badge = document.getElementById('timeframeBadge');
+    const bannerText = document.getElementById('infoBannerText');
 
-      Object.keys(state.categories).forEach(category => {
-        this.timeSeriesChart.toggleCategory(category, state.categories[category]);
-      });
+    if (badge) {
+      badge.textContent = `Timeframe: ${data.dateRange.startMonth} - ${data.dateRange.endMonth}`;
+    }
+
+    if (bannerText) {
+      bannerText.textContent = `Showing ${data.months.length} months, ${data.summary.total.toLocaleString()} total investigations`;
     }
   }
 
   showExecutiveSummary() {
-    const summary = dataAnalyzer.generateExecutiveSummary();
+    const data = getFilteredData();
+    const summary = this.generateFilteredSummary(data);
     const modal = document.getElementById('summaryModal');
     const content = document.getElementById('summaryContent');
 
     if (content) {
-      // Format the summary for display
       content.innerHTML = this.formatSummaryForModal(summary);
     }
 
     if (modal) {
       modal.style.display = 'flex';
     }
+  }
+
+  generateFilteredSummary(data) {
+    const s = data.summary;
+    return `**Executive Summary**
+
+**Period:** ${data.dateRange.startMonth} - ${data.dateRange.endMonth}
+**Total Investigations:** ${s.total.toLocaleString()}
+
+**Category Breakdown:**
+- Timely: ${s.categories[0].count.toLocaleString()} (${s.categories[0].percentage}%)
+- Not Timely: ${s.categories[1].count.toLocaleString()} (${s.categories[1].percentage}%)
+- Pending: ${s.categories[2].count.toLocaleString()} (${s.categories[2].percentage}%)
+
+**Performance:** ${s.categories[0].percentage > 85 ? 'Strong' : s.categories[0].percentage > 70 ? 'Moderate' : 'Needs Improvement'} timeliness rate of ${s.categories[0].percentage}%.
+
+**Data Points:** ${data.months.length} months of data analyzed.`;
   }
 
   formatSummaryForModal(summary) {
@@ -353,14 +377,15 @@ class AnalyticsDashboard {
   }
 
   copySummary() {
-    const summary = dataAnalyzer.generateExecutiveSummary();
+    const data = getFilteredData();
+    const summary = this.generateFilteredSummary(data);
     const plainText = summary.replace(/\*\*(.*?)\*\*/g, '$1');
 
     navigator.clipboard.writeText(plainText).then(() => {
       const btn = document.getElementById('copySummary');
       if (btn) {
         const originalText = btn.textContent;
-        btn.textContent = '✓ Copied!';
+        btn.textContent = 'Copied!';
         setTimeout(() => {
           btn.textContent = originalText;
         }, 2000);

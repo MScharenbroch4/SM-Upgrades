@@ -25,6 +25,15 @@ body {
     min-height: 100vh;
 }
 
+/* Ensure all form elements use Segoe UI */
+input,
+button,
+select,
+textarea,
+optgroup {
+    font-family: var(--font-family);
+}
+
 /* Typography */
 h1,
 h2,

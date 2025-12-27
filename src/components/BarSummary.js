@@ -1,16 +1,30 @@
-// Bar Summary Component
-import { investigationData } from '../data/investigationData.js';
+// Bar Summary Component - Consumes filtered data
+import { getFilteredData, subscribeToFilters } from '../data/investigationData.js';
 
 export class BarSummary {
     constructor(containerId) {
         this.containerId = containerId;
+        this.unsubscribe = null;
     }
 
     render() {
         const container = document.getElementById(this.containerId);
         if (!container) return;
 
-        const summary = investigationData.summary;
+        this.updateDisplay();
+
+        // Subscribe to filter changes
+        this.unsubscribe = subscribeToFilters(() => {
+            this.updateDisplay();
+        });
+    }
+
+    updateDisplay() {
+        const container = document.getElementById(this.containerId);
+        if (!container) return;
+
+        const data = getFilteredData();
+        const summary = data.summary;
 
         container.innerHTML = `
       <div class="bar-summary">
@@ -57,18 +71,16 @@ export class BarSummary {
           <span class="bar-summary__percentage">100%</span>
         </div>
       </div>
+      
+      <div class="bar-summary__date-range">
+        Data period: ${data.dateRange.startMonth} - ${data.dateRange.endMonth}
+      </div>
     `;
+    }
 
-        // Animate bars
-        setTimeout(() => {
-            const bars = container.querySelectorAll('.bar-summary__bar');
-            bars.forEach((bar, index) => {
-                const width = summary.categories[index]?.percentage || 0;
-                bar.style.width = '0%';
-                setTimeout(() => {
-                    bar.style.width = width + '%';
-                }, 100 + index * 100);
-            });
-        }, 100);
+    destroy() {
+        if (this.unsubscribe) {
+            this.unsubscribe();
+        }
     }
 }

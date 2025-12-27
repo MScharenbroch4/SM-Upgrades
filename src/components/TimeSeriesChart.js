@@ -1,17 +1,12 @@
-// Time Series Chart Component
+// Time Series Chart Component - Consumes filtered data
 import { Chart } from 'chart.js/auto';
-import { investigationData } from '../data/investigationData.js';
+import { getFilteredData, subscribeToFilters } from '../data/investigationData.js';
 
 export class TimeSeriesChart {
     constructor(containerId) {
         this.containerId = containerId;
         this.chart = null;
-        this.showPercentages = false;
-        this.visibleCategories = {
-            timely: true,
-            notTimely: true,
-            pending: true
-        };
+        this.unsubscribe = null;
     }
 
     render() {
@@ -25,6 +20,11 @@ export class TimeSeriesChart {
     `;
 
         this.createChart();
+
+        // Subscribe to filter changes
+        this.unsubscribe = subscribeToFilters((filteredData) => {
+            this.updateChart(filteredData);
+        });
     }
 
     createChart() {
@@ -32,13 +32,24 @@ export class TimeSeriesChart {
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
+        const data = getFilteredData();
 
+        this.chart = new Chart(ctx, {
+            type: 'line',
+            data: this.getChartData(data),
+            options: this.getChartOptions(data)
+        });
+    }
+
+    getChartData(data) {
         const datasets = [];
 
-        if (this.visibleCategories.timely) {
+        if (data.categories.timely) {
             datasets.push({
                 label: 'Investigation Timely',
-                data: this.showPercentages ? this.calculatePercentages('timely') : investigationData.timely,
+                data: data.displayMode === 'percentages'
+                    ? data.monthlyData.map(m => m.timelyPct)
+                    : data.timely,
                 borderColor: '#3366cc',
                 backgroundColor: '#3366cc',
                 tension: 0.1,
@@ -49,10 +60,12 @@ export class TimeSeriesChart {
             });
         }
 
-        if (this.visibleCategories.notTimely) {
+        if (data.categories.notTimely) {
             datasets.push({
                 label: 'Investigation Not Timely',
-                data: this.showPercentages ? this.calculatePercentages('notTimely') : investigationData.notTimely,
+                data: data.displayMode === 'percentages'
+                    ? data.monthlyData.map(m => m.notTimelyPct)
+                    : data.notTimely,
                 borderColor: '#cc33cc',
                 backgroundColor: '#cc33cc',
                 tension: 0.1,
@@ -63,10 +76,12 @@ export class TimeSeriesChart {
             });
         }
 
-        if (this.visibleCategories.pending) {
+        if (data.categories.pending) {
             datasets.push({
                 label: 'Pending Investigation',
-                data: this.showPercentages ? this.calculatePercentages('pending') : investigationData.pending,
+                data: data.displayMode === 'percentages'
+                    ? data.monthlyData.map(m => m.pendingPct)
+                    : data.pending,
                 borderColor: '#00cccc',
                 backgroundColor: '#00cccc',
                 tension: 0.1,
@@ -77,105 +92,95 @@ export class TimeSeriesChart {
             });
         }
 
-        // Destroy existing chart if exists
-        if (this.chart) {
-            this.chart.destroy();
-        }
+        return {
+            labels: data.months,
+            datasets
+        };
+    }
 
-        this.chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: investigationData.months,
-                datasets: datasets
+    getChartOptions(data) {
+        const isPercentage = data.displayMode === 'percentages';
+
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
-                plugins: {
-                    legend: {
-                        position: 'right',
-                        align: 'start',
-                        labels: {
-                            boxWidth: 12,
-                            padding: 15,
-                            usePointStyle: true,
-                            font: { size: 12 }
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleFont: { size: 13 },
-                        bodyFont: { size: 12 },
-                        padding: 12,
-                        callbacks: {
-                            label: (context) => {
-                                const value = context.parsed.y;
-                                if (this.showPercentages) {
-                                    return `${context.dataset.label}: ${value.toFixed(1)}%`;
-                                }
-                                return `${context.dataset.label}: ${value.toLocaleString()}`;
-                            }
-                        }
+            plugins: {
+                legend: {
+                    position: 'right',
+                    align: 'start',
+                    labels: {
+                        boxWidth: 12,
+                        padding: 15,
+                        usePointStyle: true,
+                        font: { size: 12 }
                     }
                 },
-                scales: {
-                    x: {
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)'
-                        },
-                        ticks: {
-                            maxRotation: 45,
-                            minRotation: 45,
-                            font: { size: 11 }
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)'
-                        },
-                        ticks: {
-                            font: { size: 11 },
-                            callback: (value) => {
-                                if (this.showPercentages) {
-                                    return value + '%';
-                                }
-                                return value.toLocaleString();
+                title: {
+                    display: true,
+                    text: `Investigation Trends (${data.dateRange.startMonth} - ${data.dateRange.endMonth})`,
+                    font: { size: 14, weight: 'bold' }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleFont: { size: 13 },
+                    bodyFont: { size: 12 },
+                    padding: 12,
+                    callbacks: {
+                        label: (context) => {
+                            const value = context.parsed.y;
+                            if (isPercentage) {
+                                return `${context.dataset.label}: ${value.toFixed(1)}%`;
                             }
-                        },
-                        title: {
-                            display: true,
-                            text: this.showPercentages ? 'Percentage' : 'Count',
-                            font: { size: 12 }
+                            return `${context.dataset.label}: ${value.toLocaleString()}`;
                         }
                     }
                 }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45,
+                        font: { size: 11 }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                    ticks: {
+                        font: { size: 11 },
+                        callback: (value) => isPercentage ? value + '%' : value.toLocaleString()
+                    },
+                    title: {
+                        display: true,
+                        text: isPercentage ? 'Percentage' : 'Count',
+                        font: { size: 12 }
+                    }
+                }
             }
-        });
+        };
     }
 
-    calculatePercentages(category) {
-        const data = investigationData[category];
-        return data.map((value, index) => {
-            const total = investigationData.timely[index] +
-                investigationData.notTimely[index] +
-                investigationData.pending[index];
-            return (value / total) * 100;
-        });
+    updateChart(data) {
+        if (!this.chart) return;
+
+        this.chart.data = this.getChartData(data);
+        this.chart.options = this.getChartOptions(data);
+        this.chart.update('active');
     }
 
-    togglePercentages(showPercentages) {
-        this.showPercentages = showPercentages;
-        this.createChart();
-    }
-
-    toggleCategory(category, visible) {
-        this.visibleCategories[category] = visible;
-        this.createChart();
+    destroy() {
+        if (this.unsubscribe) {
+            this.unsubscribe();
+        }
+        if (this.chart) {
+            this.chart.destroy();
+        }
     }
 
     getCanvas() {
