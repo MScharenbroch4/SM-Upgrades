@@ -115,9 +115,9 @@ class DataFilterState {
             timeframe: `${months[0]} - ${months[months.length - 1]}`,
             description: `Data from ${months[0]} to ${months[months.length - 1]}`,
             categories: [
-                { name: 'Investigation Timely', count: totalTimely, percentage: parseFloat(timelyPct) },
-                { name: 'Investigation Not Timely', count: totalNotTimely, percentage: parseFloat(notTimelyPct) },
-                { name: 'Pending Investigation', count: totalPending, percentage: parseFloat(pendingPct) }
+                { id: 'timely', name: 'Investigation Timely', count: totalTimely, percentage: parseFloat(timelyPct), color: '#3366cc' },
+                { id: 'notTimely', name: 'Investigation Not Timely', count: totalNotTimely, percentage: parseFloat(notTimelyPct), color: '#cc33cc' },
+                { id: 'pending', name: 'Pending Investigation', count: totalPending, percentage: parseFloat(pendingPct), color: '#00cccc' }
             ],
             total: grandTotal
         };

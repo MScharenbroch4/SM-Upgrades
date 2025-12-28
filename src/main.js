@@ -9,15 +9,19 @@ import { GraphAssistant } from './components/GraphAssistant.js';
 import { InsightsPanel } from './components/InsightsPanel.js';
 import { Filters } from './components/Filters.js';
 import { ExportTools } from './components/ExportTools.js';
+import { Homepage } from './components/Homepage.js';
 
 // Accessibility
 import { AccessibilityToggle, accessibilityReader } from './accessibility/AccessibilityToggle.js';
+import { keyboardNav } from './accessibility/KeyboardNavigation.js';
 
 // Data - centralized filter state
 import { getFilteredData, subscribeToFilters, investigationData } from './data/investigationData.js';
+import { sdmScreeningData, getSDMFilteredData, subscribeToSDMFilters } from './data/sdmScreeningData.js';
 
 class AnalyticsDashboard {
-  constructor() {
+  constructor(dashboardType = 'investigation') {
+    this.dashboardType = dashboardType; // 'investigation' or 'sdm'
     this.timeSeriesChart = null;
     this.barSummary = null;
     this.chatPanel = null;
@@ -26,12 +30,16 @@ class AnalyticsDashboard {
     this.filters = null;
     this.exportTools = null;
     this.accessibilityToggle = null;
+    this.unsubscribeFilters = null; // Store unsubscribe function for cleanup
   }
 
   init() {
     this.renderLayout();
     this.initializeComponents();
     this.setupEventListeners();
+
+    // Initialize keyboard navigation for ADA compliance
+    keyboardNav.init();
   }
 
   renderLayout() {
@@ -45,18 +53,28 @@ class AnalyticsDashboard {
         <!-- Header -->
         <header class="dashboard-header" role="banner">
           <div class="dashboard-header__title">
+            <a href="#" class="back-home-btn" id="backToHomeBtn" aria-label="Back to Home" title="Back to Home">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+              </svg>
+            </a>
             <svg class="dashboard-header__logo" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <rect width="32" height="32" rx="6" fill="#3366cc"/>
               <path d="M8 22V14h4v8H8zM14 22V10h4v12h-4zM20 22V6h4v16h-4z" fill="white"/>
             </svg>
             <div>
-              <h1 style="margin:0; font-size: 1.25rem;">Investigation Analytics</h1>
+              <h1 style="margin:0; font-size: 1.25rem;">${this.dashboardType === 'sdm' ? 'SDM Hotline Screening Decision' : 'Time to Investigation'}</h1>
               <span class="dashboard-header__subtitle">Powered by MS Analytics</span>
             </div>
           </div>
           
           <div class="dashboard-header__actions">
             <div id="accessibilityToggleContainer"></div>
+            <button class="btn btn--ghost" id="keyboardHelpBtn" aria-label="Keyboard shortcuts (Alt+H)" title="Keyboard shortcuts (Alt+H)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>
+              </svg>
+            </button>
             <span class="timeframe-badge" id="timeframeBadge" role="status" aria-live="polite">
               Timeframe: Full Dataset
             </span>
@@ -78,9 +96,9 @@ class AnalyticsDashboard {
           <div id="filtersContainer" role="region" aria-label="Data Filters"></div>
           
           <!-- Time Series Chart -->
-          <section class="card" role="region" aria-label="Investigation Trends Chart">
+          <section class="card" role="region" aria-label="${this.dashboardType === 'sdm' ? 'Screening Decision Trends Chart' : 'Investigation Trends Chart'}">
             <div class="card__header">
-              <h2 class="card__title" id="timeseries-title">Investigation Trends Over Time</h2>
+              <h2 class="card__title" id="timeseries-title">${this.dashboardType === 'sdm' ? 'Screening Decision Trends Over Time' : 'Investigation Trends Over Time'}</h2>
             </div>
             <div class="card__body" id="timeSeriesContainer" aria-labelledby="timeseries-title" tabindex="0"></div>
           </section>
@@ -88,9 +106,9 @@ class AnalyticsDashboard {
           <!-- Summary Grid -->
           <div class="summary-grid" role="group" aria-label="Summary Charts">
             <!-- Bar Summary -->
-            <section class="card" role="region" aria-label="Investigation Summary Statistics">
+            <section class="card" role="region" aria-label="${this.dashboardType === 'sdm' ? 'Screening Decision Summary Statistics' : 'Investigation Summary Statistics'}">
               <div class="card__header">
-                <h3 class="card__title" id="summary-title">Time to Investigation Summary</h3>
+                <h3 class="card__title" id="summary-title">${this.dashboardType === 'sdm' ? 'SDM Screening Decision Summary' : 'Time to Investigation Summary'}</h3>
               </div>
               <div class="card__body" id="barSummaryContainer" aria-labelledby="summary-title" tabindex="0"></div>
             </section>
@@ -159,14 +177,15 @@ class AnalyticsDashboard {
         justify-content: center;
         z-index: 1000;
         backdrop-filter: blur(4px);
+        padding: 16px;
       }
       
       .modal {
         background: white;
         border-radius: 12px;
         max-width: 700px;
-        width: 90%;
-        max-height: 80vh;
+        width: 100%;
+        max-height: 85vh;
         display: flex;
         flex-direction: column;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -200,20 +219,29 @@ class AnalyticsDashboard {
       .modal__close {
         background: none;
         border: none;
-        font-size: 24px;
+        font-size: 28px;
         cursor: pointer;
         color: #666;
-        padding: 0;
+        padding: 8px;
         line-height: 1;
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        transition: background 0.2s;
       }
       
       .modal__close:hover {
         color: #333;
+        background: rgba(0, 0, 0, 0.05);
       }
       
       .modal__body {
         padding: 24px;
         overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
         flex: 1;
         font-size: 14px;
         line-height: 1.6;
@@ -227,6 +255,7 @@ class AnalyticsDashboard {
         justify-content: flex-end;
         padding: 16px 24px;
         border-top: 1px solid #e5e5e5;
+        flex-wrap: wrap;
       }
       
       .filter-checkbox {
@@ -239,6 +268,57 @@ class AnalyticsDashboard {
       
       .filter-checkbox input {
         cursor: pointer;
+        width: 18px;
+        height: 18px;
+      }
+      
+      /* Modal Mobile Responsive */
+      @media (max-width: 768px) {
+        .modal-overlay {
+          padding: 12px;
+          align-items: flex-end;
+        }
+        
+        .modal {
+          max-height: 90vh;
+          border-radius: 16px 16px 0 0;
+          animation: modalSlideUp 0.3s ease;
+        }
+        
+        @keyframes modalSlideUp {
+          from {
+            opacity: 0;
+            transform: translateY(100%);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .modal__header {
+          padding: 16px 20px;
+        }
+        
+        .modal__header h2 {
+          font-size: 1.1rem;
+        }
+        
+        .modal__body {
+          padding: 16px 20px;
+          font-size: 13px;
+        }
+        
+        .modal__footer {
+          padding: 16px 20px;
+          flex-direction: column;
+        }
+        
+        .modal__footer .btn {
+          width: 100%;
+          min-height: 48px;
+          justify-content: center;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -249,25 +329,34 @@ class AnalyticsDashboard {
     this.accessibilityToggle = new AccessibilityToggle('accessibilityToggleContainer');
     this.accessibilityToggle.render();
 
+    // Determine data source based on dashboard type
+    const isSDM = this.dashboardType === 'sdm';
+    const chartData = isSDM ? sdmScreeningData : null;
+
     // Initialize Filters
-    this.filters = new Filters('filtersContainer');
+    this.filters = new Filters('filtersContainer', { showCategories: !isSDM, isSDM: isSDM });
     this.filters.render();
 
     // Initialize Time Series Chart
-    this.timeSeriesChart = new TimeSeriesChart('timeSeriesContainer');
+    this.timeSeriesChart = new TimeSeriesChart('timeSeriesContainer', chartData);
     this.timeSeriesChart.render();
 
     // Initialize Bar Summary
-    this.barSummary = new BarSummary('barSummaryContainer');
+    this.barSummary = new BarSummary('barSummaryContainer', chartData);
     this.barSummary.render();
 
     // Initialize Graph Assistant
-    this.graphAssistant = new GraphAssistant('graphAssistantContainer');
+    this.graphAssistant = new GraphAssistant('graphAssistantContainer', chartData);
     this.graphAssistant.render();
 
     // Initialize Insights Panel
-    this.insightsPanel = new InsightsPanel('insightsPanelContainer');
-    this.insightsPanel.render();
+    if (!isSDM) {
+      this.insightsPanel = new InsightsPanel('insightsPanelContainer');
+      this.insightsPanel.render();
+    } else {
+      const container = document.getElementById('insightsPanelContainer');
+      if (container) container.innerHTML = '';
+    }
 
     // Initialize Export Tools
     this.exportTools = new ExportTools('exportToolsContainer');
@@ -278,17 +367,27 @@ class AnalyticsDashboard {
     this.chatPanel.render();
 
     // Subscribe to filter changes to update header and announce
-    subscribeToFilters((data) => {
-      this.updateHeader(data);
-      // Announce filter changes if screen reader is enabled
-      if (accessibilityReader.isEnabled) {
-        accessibilityReader.describeFilterChange('Date range',
-          `${data.dateRange.startMonth} to ${data.dateRange.endMonth}`, data);
-      }
-    });
-
-    // Initial header update
-    this.updateHeader(getFilteredData());
+    if (isSDM) {
+      this.unsubscribeFilters = subscribeToSDMFilters((data) => {
+        this.updateHeader(data);
+        if (accessibilityReader.isEnabled) {
+          accessibilityReader.describeFilterChange('Date range',
+            `${data.dateRange?.startMonth || data.dateRange?.start} to ${data.dateRange?.endMonth || data.dateRange?.end}`, data);
+        }
+      });
+      // Initial header update
+      this.updateHeader(getSDMFilteredData());
+    } else {
+      this.unsubscribeFilters = subscribeToFilters((data) => {
+        this.updateHeader(data);
+        if (accessibilityReader.isEnabled) {
+          accessibilityReader.describeFilterChange('Date range',
+            `${data.dateRange.startMonth} to ${data.dateRange.endMonth}`, data);
+        }
+      });
+      // Initial header update
+      this.updateHeader(getFilteredData());
+    }
   }
 
   setupEventListeners() {
@@ -296,6 +395,21 @@ class AnalyticsDashboard {
     const generateSummaryBtn = document.getElementById('generateSummaryBtn');
     if (generateSummaryBtn) {
       generateSummaryBtn.addEventListener('click', () => this.showExecutiveSummary());
+    }
+
+    // Keyboard Help Button
+    const keyboardHelpBtn = document.getElementById('keyboardHelpBtn');
+    if (keyboardHelpBtn) {
+      keyboardHelpBtn.addEventListener('click', () => keyboardNav.toggleShortcutsHelp());
+    }
+
+    // Back to Home Button
+    const backToHomeBtn = document.getElementById('backToHomeBtn');
+    if (backToHomeBtn) {
+      backToHomeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.location.hash = '';
+      });
     }
 
     // Modal close button
@@ -342,11 +456,16 @@ class AnalyticsDashboard {
     const bannerText = document.getElementById('infoBannerText');
 
     if (badge) {
-      badge.textContent = `Timeframe: ${data.dateRange.startMonth} - ${data.dateRange.endMonth}`;
+      const startMonth = data.dateRange?.startMonth || data.dateRange?.start || '';
+      const endMonth = data.dateRange?.endMonth || data.dateRange?.end || '';
+      badge.textContent = `Timeframe: ${startMonth} - ${endMonth}`;
     }
 
     if (bannerText) {
-      bannerText.textContent = `Showing ${data.months.length} months, ${data.summary.total.toLocaleString()} total investigations`;
+      const monthCount = data.months?.length || data.labels?.length || 0;
+      const totalCount = data.summary?.total || 0;
+      const itemType = this.dashboardType === 'sdm' ? 'total referrals' : 'total investigations';
+      bannerText.textContent = `Showing ${monthCount} months, ${totalCount.toLocaleString()} ${itemType}`;
     }
   }
 
@@ -362,6 +481,9 @@ class AnalyticsDashboard {
 
     if (modal) {
       modal.style.display = 'flex';
+      modal.setAttribute('aria-hidden', 'false');
+      // Trap focus in modal and focus first button
+      keyboardNav.trapFocus('#summaryModal');
     }
   }
 
@@ -392,6 +514,8 @@ class AnalyticsDashboard {
     const modal = document.getElementById('summaryModal');
     if (modal) {
       modal.style.display = 'none';
+      modal.setAttribute('aria-hidden', 'true');
+      keyboardNav.releaseFocusTrap();
     }
   }
 
@@ -411,13 +535,113 @@ class AnalyticsDashboard {
       }
     });
   }
+
+  // Cleanup method to properly destroy dashboard and release resources
+  destroy() {
+    // Unsubscribe from filter changes
+    if (this.unsubscribeFilters) {
+      this.unsubscribeFilters();
+      this.unsubscribeFilters = null;
+    }
+
+    // Destroy all components that have cleanup methods
+    if (this.timeSeriesChart && this.timeSeriesChart.destroy) {
+      this.timeSeriesChart.destroy();
+    }
+    if (this.barSummary && this.barSummary.destroy) {
+      this.barSummary.destroy();
+    }
+    if (this.graphAssistant && this.graphAssistant.destroy) {
+      this.graphAssistant.destroy();
+    }
+    if (this.insightsPanel && this.insightsPanel.destroy) {
+      this.insightsPanel.destroy();
+    }
+    if (this.chatPanel && this.chatPanel.destroy) {
+      this.chatPanel.destroy();
+    }
+
+    // Clear references
+    this.timeSeriesChart = null;
+    this.barSummary = null;
+    this.graphAssistant = null;
+    this.insightsPanel = null;
+    this.chatPanel = null;
+    this.filters = null;
+    this.exportTools = null;
+    this.accessibilityToggle = null;
+  }
 }
 
-// Initialize the dashboard when DOM is ready
+// Simple Router for Homepage/Dashboard navigation
+class AppRouter {
+  constructor() {
+    this.currentPage = 'home';
+    this.dashboard = null;
+    this.homepage = null;
+  }
+
+  init() {
+    // Check URL hash for initial route
+    this.handleRoute(window.location.hash.slice(1));
+
+    // Listen for hash changes
+    window.addEventListener('hashchange', () => {
+      this.handleRoute(window.location.hash.slice(1));
+    });
+  }
+
+  handleRoute(hash) {
+    if (hash === 'dashboard' || hash === 'child-welfare' || hash === 'time-to-investigation') {
+      this.showDashboard('investigation');
+    } else if (hash === 'sdm-hotline') {
+      this.showDashboard('sdm');
+    } else {
+      this.showHomepage();
+    }
+  }
+
+  showHomepage() {
+    this.currentPage = 'home';
+    window.location.hash = '';
+
+    // Cleanup dashboard if present
+    if (this.dashboard) {
+      this.dashboard.destroy();
+      this.dashboard = null;
+    }
+
+    this.homepage = new Homepage('app', (page) => {
+      if (page === 'dashboard') {
+        this.showDashboard('investigation');
+      } else if (page === 'sdm-hotline') {
+        this.showDashboard('sdm');
+      }
+    });
+    this.homepage.render();
+    keyboardNav.init();
+  }
+
+  showDashboard(type = 'investigation') {
+    this.currentPage = type === 'sdm' ? 'sdm-hotline' : 'dashboard';
+    window.location.hash = this.currentPage;
+
+    // Cleanup previous dashboard if exists
+    if (this.dashboard) {
+      this.dashboard.destroy();
+      this.dashboard = null;
+    }
+
+    this.dashboard = new AnalyticsDashboard(type);
+    this.dashboard.init();
+  }
+}
+
+// Initialize the app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-  const dashboard = new AnalyticsDashboard();
-  dashboard.init();
+  const router = new AppRouter();
+  router.init();
 });
 
 // Export for potential external use
-export { AnalyticsDashboard };
+export { AnalyticsDashboard, AppRouter };

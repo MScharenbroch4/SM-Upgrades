@@ -1,14 +1,17 @@
 // Graph Assistant Component - Visualization Selector with filtered data
 import { Chart } from 'chart.js/auto';
 import { getFilteredData, subscribeToFilters } from '../data/investigationData.js';
+import { getSDMFilteredData, subscribeToSDMFilters } from '../data/sdmScreeningData.js';
 import { accessibilityReader } from '../accessibility/AccessibilityToggle.js';
 
 export class GraphAssistant {
-    constructor(containerId) {
+    constructor(containerId, dataOptions = null) {
         this.containerId = containerId;
-        this.currentChartType = 'pie';
+        this.currentChartType = 'pie'; // Default to pie to support summary data visualization
         this.chart = null;
         this.unsubscribe = null;
+        this.dataOptions = dataOptions; // Custom data source if provided
+        this.isSDM = dataOptions !== null;
     }
 
     render() {
@@ -46,10 +49,16 @@ export class GraphAssistant {
         this.attachEventListeners();
         this.createChart();
 
-        // Subscribe to filter changes
-        this.unsubscribe = subscribeToFilters(() => {
-            this.createChart();
-        });
+        // Subscribe to appropriate filter changes
+        if (this.isSDM) {
+            this.unsubscribe = subscribeToSDMFilters(() => {
+                this.createChart();
+            });
+        } else {
+            this.unsubscribe = subscribeToFilters(() => {
+                this.createChart();
+            });
+        }
 
         // Add keyboard listener for chart focus
         const chartContainer = document.getElementById('graphAssistantChart');
@@ -125,11 +134,8 @@ export class GraphAssistant {
             { id: 'stackedBar', label: 'Stacked Bar', description: 'Stacked bar chart' },
             { id: 'line', label: 'Line', description: 'Line chart showing trends' },
             { id: 'area', label: 'Area', description: 'Area chart with filled regions' },
-            { id: 'lollipop', label: 'Lollipop', description: 'Lollipop chart for comparisons' },
-            { id: 'heatmap', label: 'Heatmap', description: 'Color-coded timeliness rates' },
             { id: 'cumulative', label: 'Cumulative', description: 'Running totals over time' },
-            { id: 'percentageBar', label: 'Percentage', description: '100% stacked bars' },
-            { id: 'sankey', label: 'Sankey', description: 'Flow diagram showing proportions' }
+            { id: 'percentageBar', label: 'Percentage', description: '100% stacked bars' }
         ];
     }
 
@@ -137,13 +143,21 @@ export class GraphAssistant {
         const canvas = document.getElementById('dynamicChartCanvas');
         if (!canvas) return;
 
+        // Use correct data getter based on mode
+        let data;
+        if (this.isSDM) {
+            data = getSDMFilteredData();
+        } else {
+            data = getFilteredData();
+        }
+
         // Destroy existing chart
         if (this.chart) {
             this.chart.destroy();
             this.chart = null;
         }
 
-        const data = getFilteredData();
+        // const data = getFilteredData();
 
         switch (this.currentChartType) {
             case 'donut':
@@ -161,20 +175,11 @@ export class GraphAssistant {
             case 'area':
                 this.createAreaChart(canvas, data);
                 break;
-            case 'lollipop':
-                this.createLollipopChart(canvas, data);
-                break;
-            case 'heatmap':
-                this.createHeatmapChart(canvas, data);
-                break;
             case 'cumulative':
                 this.createCumulativeChart(canvas, data);
                 break;
             case 'percentageBar':
                 this.createPercentageBarChart(canvas, data);
-                break;
-            case 'sankey':
-                this.createSankeyChart(canvas, data);
                 break;
             case 'pie':
             default:
@@ -205,7 +210,7 @@ export class GraphAssistant {
                 labels: summary.categories.map(c => c.name),
                 datasets: [{
                     data: summary.categories.map(c => c.count),
-                    backgroundColor: [this.colors.timely, this.colors.notTimely, this.colors.pending],
+                    backgroundColor: summary.categories.map(c => c.color || this.colors[c.id] || '#ccc'),
                     borderColor: '#ffffff',
                     borderWidth: 2
                 }]
@@ -235,7 +240,7 @@ export class GraphAssistant {
                 labels: summary.categories.map(c => c.name),
                 datasets: [{
                     data: summary.categories.map(c => c.count),
-                    backgroundColor: [this.colors.timely, this.colors.notTimely, this.colors.pending],
+                    backgroundColor: summary.categories.map(c => c.color || this.colors[c.id] || '#ccc'),
                     borderColor: '#ffffff',
                     borderWidth: 2
                 }]
@@ -258,6 +263,25 @@ export class GraphAssistant {
 
     createBarChart(canvas, data) {
         const ctx = canvas.getContext('2d');
+
+        // Handle SDM data structure
+        if (data.chartData && !data.timely) {
+            this.chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Screen In', data: data.chartData.screenIn, backgroundColor: '#3366cc' },
+                        { label: 'Evaluate Out', data: data.chartData.evaluateOut, backgroundColor: '#cc33cc' },
+                        { label: 'Override to In Person', data: data.chartData.overrideInPerson, backgroundColor: '#00cc99' },
+                        { label: 'Override to Eval Out', data: data.chartData.overrideEvalOut, backgroundColor: '#ff3399' }
+                    ]
+                },
+                options: this.getCommonOptions(`Bar Chart (${data.dateRange?.start || data.dateRange?.startMonth} - ${data.dateRange?.end || data.dateRange?.endMonth})`)
+            });
+            return;
+        }
+
         this.chart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -274,6 +298,28 @@ export class GraphAssistant {
 
     createStackedBarChart(canvas, data) {
         const ctx = canvas.getContext('2d');
+
+        // Handle SDM data structure
+        if (data.chartData && !data.timely) {
+            this.chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Screen In', data: data.chartData.screenIn, backgroundColor: '#3366cc', stack: 's1' },
+                        { label: 'Evaluate Out', data: data.chartData.evaluateOut, backgroundColor: '#cc33cc', stack: 's1' },
+                        { label: 'Override to In Person', data: data.chartData.overrideInPerson, backgroundColor: '#00cc99', stack: 's1' },
+                        { label: 'Override to Eval Out', data: data.chartData.overrideEvalOut, backgroundColor: '#ff3399', stack: 's1' }
+                    ]
+                },
+                options: {
+                    ...this.getCommonOptions(`Stacked Bar (${data.dateRange?.start || data.dateRange?.startMonth} - ${data.dateRange?.end || data.dateRange?.endMonth})`),
+                    scales: { x: { stacked: true }, y: { stacked: true } }
+                }
+            });
+            return;
+        }
+
         this.chart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -293,6 +339,26 @@ export class GraphAssistant {
 
     createLineChart(canvas, data) {
         const ctx = canvas.getContext('2d');
+
+        // Handle SDM data structure
+        if (data.chartData && !data.timely) {
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Screen In', data: data.chartData.screenIn, borderColor: '#3366cc', backgroundColor: '#3366cc', fill: false, tension: 0.1, pointRadius: 4 },
+                        { label: 'Evaluate Out', data: data.chartData.evaluateOut, borderColor: '#cc33cc', backgroundColor: '#cc33cc', fill: false, tension: 0.1, pointRadius: 4 },
+                        { label: 'Override to In Person', data: data.chartData.overrideInPerson, borderColor: '#00cc99', backgroundColor: '#00cc99', fill: false, tension: 0.1, pointRadius: 4 },
+                        { label: 'Override to Eval Out', data: data.chartData.overrideEvalOut, borderColor: '#ff3399', backgroundColor: '#ff3399', fill: false, tension: 0.1, pointRadius: 4 }
+                    ]
+                },
+                options: this.getCommonOptions(`Line Chart (${data.dateRange?.start || data.dateRange?.startMonth} - ${data.dateRange?.end || data.dateRange?.endMonth})`)
+            });
+            return;
+        }
+
+        // Handle Investigation data structure
         this.chart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -309,6 +375,25 @@ export class GraphAssistant {
 
     createAreaChart(canvas, data) {
         const ctx = canvas.getContext('2d');
+
+        // Handle SDM data structure
+        if (data.chartData && !data.timely) {
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Screen In', data: data.chartData.screenIn, borderColor: '#3366cc', backgroundColor: 'rgba(51, 102, 204, 0.3)', fill: true, tension: 0.3 },
+                        { label: 'Evaluate Out', data: data.chartData.evaluateOut, borderColor: '#cc33cc', backgroundColor: 'rgba(204, 51, 204, 0.3)', fill: true, tension: 0.3 },
+                        { label: 'Override to In Person', data: data.chartData.overrideInPerson, borderColor: '#00cc99', backgroundColor: 'rgba(0, 204, 153, 0.3)', fill: true, tension: 0.3 },
+                        { label: 'Override to Eval Out', data: data.chartData.overrideEvalOut, borderColor: '#ff3399', backgroundColor: 'rgba(255, 51, 153, 0.3)', fill: true, tension: 0.3 }
+                    ]
+                },
+                options: this.getCommonOptions(`Area Chart (${data.dateRange?.start || data.dateRange?.startMonth} - ${data.dateRange?.end || data.dateRange?.endMonth})`)
+            });
+            return;
+        }
+
         this.chart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -382,6 +467,31 @@ export class GraphAssistant {
 
     createCumulativeChart(canvas, data) {
         const ctx = canvas.getContext('2d');
+
+        // Handle SDM data structure
+        if (data.chartData && !data.timely) {
+            let cumSI = 0, cumEO = 0, cumOI = 0, cumOE = 0;
+            const cumScreenIn = data.chartData.screenIn.map(v => cumSI += v);
+            const cumEvalOut = data.chartData.evaluateOut.map(v => cumEO += v);
+            const cumOverrideIn = data.chartData.overrideInPerson.map(v => cumOI += v);
+            const cumOverrideEval = data.chartData.overrideEvalOut.map(v => cumOE += v);
+
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Cumulative Screen In', data: cumScreenIn, borderColor: '#3366cc', backgroundColor: 'rgba(51, 102, 204, 0.3)', fill: true, tension: 0.2 },
+                        { label: 'Cumulative Evaluate Out', data: cumEvalOut, borderColor: '#cc33cc', backgroundColor: 'rgba(204, 51, 204, 0.3)', fill: true, tension: 0.2 },
+                        { label: 'Cumulative Override In Person', data: cumOverrideIn, borderColor: '#00cc99', backgroundColor: 'rgba(0, 204, 153, 0.3)', fill: true, tension: 0.2 },
+                        { label: 'Cumulative Override Eval Out', data: cumOverrideEval, borderColor: '#ff3399', backgroundColor: 'rgba(255, 51, 153, 0.3)', fill: true, tension: 0.2 }
+                    ]
+                },
+                options: this.getCommonOptions(`Cumulative (${data.dateRange?.start || data.dateRange?.startMonth} - ${data.dateRange?.end || data.dateRange?.endMonth})`)
+            });
+            return;
+        }
+
         let cumT = 0, cumN = 0, cumP = 0;
         const cumTimely = data.timely.map(v => cumT += v);
         const cumNotTimely = data.notTimely.map(v => cumN += v);
@@ -403,6 +513,42 @@ export class GraphAssistant {
 
     createPercentageBarChart(canvas, data) {
         const ctx = canvas.getContext('2d');
+
+        // Handle SDM data structure
+        if (data.chartData && !data.timely) {
+            // Calculate percentage for each category per month
+            const numMonths = data.chartData.screenIn.length;
+            const pctData = [];
+            for (let i = 0; i < numMonths; i++) {
+                const total = data.chartData.screenIn[i] + data.chartData.evaluateOut[i] +
+                    data.chartData.overrideInPerson[i] + data.chartData.overrideEvalOut[i];
+                pctData.push({
+                    screenIn: total > 0 ? (data.chartData.screenIn[i] / total * 100) : 0,
+                    evaluateOut: total > 0 ? (data.chartData.evaluateOut[i] / total * 100) : 0,
+                    overrideInPerson: total > 0 ? (data.chartData.overrideInPerson[i] / total * 100) : 0,
+                    overrideEvalOut: total > 0 ? (data.chartData.overrideEvalOut[i] / total * 100) : 0
+                });
+            }
+
+            this.chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        { label: 'Screen In %', data: pctData.map(d => d.screenIn), backgroundColor: '#3366cc', stack: 's1' },
+                        { label: 'Evaluate Out %', data: pctData.map(d => d.evaluateOut), backgroundColor: '#cc33cc', stack: 's1' },
+                        { label: 'Override In Person %', data: pctData.map(d => d.overrideInPerson), backgroundColor: '#00cc99', stack: 's1' },
+                        { label: 'Override Eval Out %', data: pctData.map(d => d.overrideEvalOut), backgroundColor: '#ff3399', stack: 's1' }
+                    ]
+                },
+                options: {
+                    ...this.getCommonOptions(`100% Stacked (${data.dateRange?.start || data.dateRange?.startMonth} - ${data.dateRange?.end || data.dateRange?.endMonth})`),
+                    scales: { x: { stacked: true }, y: { stacked: true, max: 100 } }
+                }
+            });
+            return;
+        }
+
         this.chart = new Chart(ctx, {
             type: 'bar',
             data: {

@@ -9,17 +9,26 @@ import {
   getFilterState
 } from '../data/investigationData.js';
 
+import {
+  getSDMMonthsList,
+  setSDMDateRange,
+  setSDMDisplayMode,
+  setSDMCategory,
+  getSDMFilterState
+} from '../data/sdmScreeningData.js';
+
 export class Filters {
-  constructor(containerId) {
+  constructor(containerId, options = {}) {
     this.containerId = containerId;
-    this.months = getFullMonthsList();
+    this.options = { showCategories: true, isSDM: false, ...options };
+    this.months = this.options.isSDM ? getSDMMonthsList() : getFullMonthsList();
   }
 
   render() {
     const container = document.getElementById(this.containerId);
     if (!container) return;
 
-    const state = getFilterState();
+    const state = this.options.isSDM ? getSDMFilterState() : getFilterState();
 
     container.innerHTML = `
       <div class="filter-bar">
@@ -57,21 +66,45 @@ export class Filters {
           </div>
         </div>
         
+        ${this.options.showCategories && !this.options.isSDM ? `
         <div class="filter-group">
           <span class="filter-label">Show:</span>
           <label class="filter-checkbox">
-            <input type="checkbox" id="filterTimely" ${state.categories.timely ? 'checked' : ''}>
+            <input type="checkbox" id="filterTimely" ${state.categories?.timely ? 'checked' : ''}>
             <span style="color: var(--color-timely)">■</span> Timely
           </label>
           <label class="filter-checkbox">
-            <input type="checkbox" id="filterNotTimely" ${state.categories.notTimely ? 'checked' : ''}>
+            <input type="checkbox" id="filterNotTimely" ${state.categories?.notTimely ? 'checked' : ''}>
             <span style="color: var(--color-not-timely)">■</span> Not Timely
           </label>
           <label class="filter-checkbox">
-            <input type="checkbox" id="filterPending" ${state.categories.pending ? 'checked' : ''}>
+            <input type="checkbox" id="filterPending" ${state.categories?.pending ? 'checked' : ''}>
             <span style="color: var(--color-pending)">■</span> Pending
           </label>
         </div>
+        ` : ''}
+        
+        ${this.options.isSDM ? `
+        <div class="filter-group">
+          <span class="filter-label">Show:</span>
+          <label class="filter-checkbox">
+            <input type="checkbox" id="filterScreenIn" ${state.categories?.screenIn ? 'checked' : ''}>
+            <span style="color: #3366cc">■</span> Screen In
+          </label>
+          <label class="filter-checkbox">
+            <input type="checkbox" id="filterEvaluateOut" ${state.categories?.evaluateOut ? 'checked' : ''}>
+            <span style="color: #cc33cc">■</span> Evaluate Out
+          </label>
+          <label class="filter-checkbox">
+            <input type="checkbox" id="filterOverrideIn" ${state.categories?.overrideInPerson ? 'checked' : ''}>
+            <span style="color: #00cc99">■</span> Override In
+          </label>
+          <label class="filter-checkbox">
+            <input type="checkbox" id="filterOverrideOut" ${state.categories?.overrideEvalOut ? 'checked' : ''}>
+            <span style="color: #ff3399">■</span> Override Out
+          </label>
+        </div>
+        ` : ''}
       </div>
     `;
 
@@ -84,6 +117,23 @@ export class Filters {
     const endFilter = document.getElementById('endMonthFilter');
     const resetBtn = document.getElementById('resetDateRange');
 
+    // Helper to call correct setter based on mode
+    const updateDateRange = (start, end) => {
+      if (this.options.isSDM) {
+        setSDMDateRange(start, end);
+      } else {
+        setDateRange(start, end);
+      }
+    };
+
+    const updateDisplayMode = (mode) => {
+      if (this.options.isSDM) {
+        setSDMDisplayMode(mode);
+      } else {
+        setDisplayMode(mode);
+      }
+    };
+
     if (startFilter) {
       startFilter.addEventListener('change', (e) => {
         const startIdx = parseInt(e.target.value);
@@ -91,10 +141,10 @@ export class Filters {
 
         // Ensure start <= end
         if (startIdx <= endIdx) {
-          setDateRange(startIdx, endIdx);
+          updateDateRange(startIdx, endIdx);
         } else {
           // Auto-adjust end to match start
-          setDateRange(startIdx, startIdx);
+          updateDateRange(startIdx, startIdx);
           this.render(); // Re-render to update select
         }
       });
@@ -107,10 +157,10 @@ export class Filters {
 
         // Ensure start <= end
         if (startIdx <= endIdx) {
-          setDateRange(startIdx, endIdx);
+          updateDateRange(startIdx, endIdx);
         } else {
           // Auto-adjust start to match end
-          setDateRange(endIdx, endIdx);
+          updateDateRange(endIdx, endIdx);
           this.render(); // Re-render to update select
         }
       });
@@ -118,7 +168,7 @@ export class Filters {
 
     if (resetBtn) {
       resetBtn.addEventListener('click', () => {
-        setDateRange(0, this.months.length - 1);
+        updateDateRange(0, this.months.length - 1);
         this.render();
       });
     }
@@ -127,12 +177,15 @@ export class Filters {
     const toggleBtns = document.querySelectorAll('.filter-toggle__btn');
     toggleBtns.forEach(btn => {
       btn.addEventListener('click', (e) => {
-        setDisplayMode(e.target.dataset.mode);
-        this.render();
+        const mode = e.currentTarget.dataset.mode;
+        if (mode) {
+          updateDisplayMode(mode);
+          this.render();
+        }
       });
     });
 
-    // Category checkboxes
+    // Category checkboxes - Investigation
     const timelyCheck = document.getElementById('filterTimely');
     const notTimelyCheck = document.getElementById('filterNotTimely');
     const pendingCheck = document.getElementById('filterPending');
@@ -152,6 +205,36 @@ export class Filters {
     if (pendingCheck) {
       pendingCheck.addEventListener('change', (e) => {
         setCategory('pending', e.target.checked);
+      });
+    }
+
+    // Category checkboxes - SDM
+    const screenInCheck = document.getElementById('filterScreenIn');
+    const evaluateOutCheck = document.getElementById('filterEvaluateOut');
+    const overrideInCheck = document.getElementById('filterOverrideIn');
+    const overrideOutCheck = document.getElementById('filterOverrideOut');
+
+    if (screenInCheck) {
+      screenInCheck.addEventListener('change', (e) => {
+        setSDMCategory('screenIn', e.target.checked);
+      });
+    }
+
+    if (evaluateOutCheck) {
+      evaluateOutCheck.addEventListener('change', (e) => {
+        setSDMCategory('evaluateOut', e.target.checked);
+      });
+    }
+
+    if (overrideInCheck) {
+      overrideInCheck.addEventListener('change', (e) => {
+        setSDMCategory('overrideInPerson', e.target.checked);
+      });
+    }
+
+    if (overrideOutCheck) {
+      overrideOutCheck.addEventListener('change', (e) => {
+        setSDMCategory('overrideEvalOut', e.target.checked);
       });
     }
   }
